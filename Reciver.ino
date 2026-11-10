@@ -59,10 +59,12 @@ struct Device {
   bool active;
   String id;
   String name;
-  float minSetpoint;  // Low Alarm Trigger
-  float maxSetpoint;  // High Alarm Trigger
-  float rawValue;     // Actual Raw Data from sensor
+  String unit;
+  float minSetpoint;  // 0%   = 4.00 mA
+  float maxSetpoint;  // 100% = 20.00 mA
+  float rawValue;
   float percent;
+  float output_mA;
   bool commActive;
   unsigned long lastPacketTime;
 };
@@ -133,6 +135,7 @@ const char* html_page PROGMEM = R"rawliteral(
     .badge { padding: 5px 12px; border-radius: 20px; font-weight: 700; font-size: 11px; display: inline-block; }
     .badge.success { background: #dcfce7; color: var(--success); }
     .badge.danger { background: #fee2e2; color: var(--danger); }
+    .badge.info { background: #eff6ff; color: var(--primary); border: 1px solid #bfdbfe; }
     
     .form-group { margin-bottom: 18px; }
     label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px; color: var(--text); }
@@ -245,15 +248,27 @@ const char* html_page PROGMEM = R"rawliteral(
 
       <!-- DEVICE SETTINGS TAB -->
       <div id="settings" class="tab-pane">
-        <h1 class="header-title">Device Alarm Setpoints & Registration</h1>
+        <h1 class="header-title">Device Setpoints, Units & Registration</h1>
         <div class="grid">
           
           <div class="card">
-            <h3 class="card-title">Configure Device Alarm Setpoints</h3>
+            <h3 class="card-title">Configure Setpoints & Engineering Unit</h3>
             <div class="form-group"><label>Select Target Device</label><select id="config-device-select" onchange="loadDeviceConfig()"></select></div>
-            <div class="form-group"><label>Min Setpoint (Low Alarm Trigger)</label><input type="number" step="0.01" id="conf-min" placeholder="0.00"></div>
-            <div class="form-group"><label>Max Setpoint (High Alarm Trigger)</label><input type="number" step="0.01" id="conf-max" placeholder="10.00"></div>
-            <button onclick="requireAuth(saveDeviceConfig)">Save Setpoints</button>
+            <div class="form-group">
+              <label>Engineering Unit</label>
+              <select id="conf-unit">
+                <option value="Raw">Raw Value (Direct Hardware)</option>
+                <option value="m">Meters (m)</option>
+                <option value="cm">Centimeters (cm)</option>
+                <option value="mm">Millimeters (mm)</option>
+                <option value="L">Liters (L)</option>
+                <option value="%">Percentage (%)</option>
+                <option value="ft">Feet (ft)</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Min Setpoint (0% = 4.00 mA)</label><input type="number" step="0.01" id="conf-min" placeholder="0.00"></div>
+            <div class="form-group"><label>Max Setpoint (100% = 20.00 mA)</label><input type="number" step="0.01" id="conf-max" placeholder="10.00"></div>
+            <button onclick="requireAuth(saveDeviceConfig)">Save Calibration</button>
           </div>
 
           <div class="card">
@@ -267,7 +282,7 @@ const char* html_page PROGMEM = R"rawliteral(
         <div class="card" style="margin-top: 25px;">
           <h3 class="card-title">Configured Field Devices</h3>
           <table id="device-table">
-            <thead><tr><th>Node ID</th><th>Name</th><th>Min Setpoint</th><th>Max Setpoint</th><th>Action</th></tr></thead>
+            <thead><tr><th>Node ID</th><th>Name</th><th>Unit</th><th>Min (4mA)</th><th>Max (20mA)</th><th>Action</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -403,7 +418,7 @@ const char* html_page PROGMEM = R"rawliteral(
       tableBody.innerHTML = '';
 
       if (globalData.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="5">No active devices registered.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="6">No active devices registered.</td></tr>';
         buildDashboardDOM();
         return;
       }
@@ -415,8 +430,9 @@ const char* html_page PROGMEM = R"rawliteral(
           <tr>
             <td><strong>${d.id}</strong></td>
             <td>${d.name}</td>
-            <td>${d.minSetpoint.toFixed(2)}</td>
-            <td>${d.maxSetpoint.toFixed(2)}</td>
+            <td><span class="badge info">${d.unit}</span></td>
+            <td>${d.minSetpoint.toFixed(2)} ${d.unit}</td>
+            <td>${d.maxSetpoint.toFixed(2)} ${d.unit}</td>
             <td><button class="btn-danger" style="padding: 5px 10px; font-size: 11px;" onclick="requireAuth(() => deleteDevice('${d.id}'))">Delete</button></td>
           </tr>`;
       });
@@ -438,7 +454,7 @@ const char* html_page PROGMEM = R"rawliteral(
       const container = document.getElementById('dashboard-display-container');
       
       if (globalData.length === 0) {
-        container.innerHTML = '<div class="card"><p style="text-align:center; color:var(--text-muted);">No field devices registered yet. Go to Device Settings to add one.</p></div>';
+        container.innerHTML = '<div class="card"><p style="text-align:center; color:var(--text-muted);">No field devices registered yet.</p></div>';
         return;
       }
 
@@ -456,9 +472,13 @@ const char* html_page PROGMEM = R"rawliteral(
             </div>
             <div class="value" id="percent-${idx}" style="font-size:34px;">--%</div>
             <div style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 12px; text-align: left;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <span style="font-size:13px; color:var(--text-muted); font-weight:600;">Raw Data:</span>
-                <span class="value" id="raw-${idx}" style="font-size:22px; margin:0;">--</span>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <span style="font-size:13px; color:var(--text-muted); font-weight:600;">Reading:</span>
+                <span class="value" id="raw-${idx}" style="font-size:20px; margin:0;">--</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <span style="font-size:12px; color:var(--text-muted);">Current Output:</span>
+                <span id="ma-${idx}" style="font-weight:700; color:var(--primary); font-size:13px;">-- mA</span>
               </div>
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                 <span style="font-size:12px; color:var(--text-muted);">Comms:</span>
@@ -480,7 +500,7 @@ const char* html_page PROGMEM = R"rawliteral(
         container.innerHTML = `
         <div class="grid">
           <div class="card" style="text-align: center;">
-            <h3 class="card-title">3D Tank Level View</h3>
+            <h3 class="card-title">Tank Fill Level (3D View)</h3>
             <div class="tank-wrapper">
               <div class="tank-3d">
                 <div class="tank-liquid" id="liquid-${idx}"></div>
@@ -492,14 +512,14 @@ const char* html_page PROGMEM = R"rawliteral(
           </div>
           
           <div class="card">
-            <h3 class="card-title">Live Raw Data Reading</h3>
+            <h3 class="card-title">Live Sensor Reading</h3>
             <div class="value" id="raw-${idx}">--</div>
-            <p style="color: var(--primary); font-size: 15px; font-weight: 600;">Direct Field Data</p>
+            <p style="color: var(--primary); font-size: 18px; font-weight: 600;" id="ma-${idx}">-- mA Output</p>
             
             <h3 class="card-title" style="margin-top: 35px;">System Diagnostics</h3>
             <p style="display: flex; justify-content: space-between;">Comms Status: <span id="comm-${idx}" class="badge danger">NO DATA</span></p>
             <p style="display: flex; justify-content: space-between;">Alarm Condition: <span id="alarm-${idx}" class="badge success">NORMAL</span></p>
-            <p style="font-size: 12px; color: var(--text-muted); margin-top: 25px; text-align: right;">Setpoints: ${d.minSetpoint.toFixed(2)} - ${d.maxSetpoint.toFixed(2)}</p>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 25px; text-align: right;" id="scale-info-${idx}">Scale Info</p>
           </div>
         </div>`;
       }
@@ -512,12 +532,22 @@ const char* html_page PROGMEM = R"rawliteral(
         const liquid = document.getElementById(`liquid-${idx}`);
         const percentTxt = document.getElementById(`percent-${idx}`);
         const rawTxt = document.getElementById(`raw-${idx}`);
+        const maTxt = document.getElementById(`ma-${idx}`);
         const commBadge = document.getElementById(`comm-${idx}`);
         const alarmBadge = document.getElementById(`alarm-${idx}`);
+        const scaleInfo = document.getElementById(`scale-info-${idx}`);
 
-        if (liquid && percentTxt && rawTxt) {
-          rawTxt.innerText = d.rawValue.toFixed(2);
+        if (liquid && percentTxt && rawTxt && maTxt) {
+          if (d.unit === 'Raw') {
+            rawTxt.innerText = Math.round(d.rawValue) + ' (Raw)';
+            if (scaleInfo) scaleInfo.innerText = `Raw Hardware Range: ${d.minSetpoint} to ${d.maxSetpoint}`;
+          } else {
+            rawTxt.innerText = d.rawValue.toFixed(2) + ' ' + d.unit;
+            if (scaleInfo) scaleInfo.innerText = `Scale: 0% (${d.minSetpoint} ${d.unit}) to 100% (${d.maxSetpoint} ${d.unit})`;
+          }
+
           percentTxt.innerText = d.percent.toFixed(1) + '%';
+          maTxt.innerText = d.output_mA.toFixed(2) + ' mA Output';
           liquid.style.height = d.percent + '%';
 
           if (d.commActive) {
@@ -555,6 +585,7 @@ const char* html_page PROGMEM = R"rawliteral(
     function loadDeviceConfig() {
       const idx = document.getElementById('config-device-select').value;
       if(globalData[idx]) {
+        document.getElementById('conf-unit').value = globalData[idx].unit;
         document.getElementById('conf-min').value = globalData[idx].minSetpoint;
         document.getElementById('conf-max').value = globalData[idx].maxSetpoint;
       }
@@ -563,9 +594,10 @@ const char* html_page PROGMEM = R"rawliteral(
     function saveDeviceConfig() {
       const idx = document.getElementById('config-device-select').value;
       if(!globalData[idx]) return;
+      const unit = document.getElementById('conf-unit').value;
       const min = document.getElementById('conf-min').value;
       const max = document.getElementById('conf-max').value;
-      fetch(`/api/device/config?id=${encodeURIComponent(globalData[idx].id)}&min=${min}&max=${max}`)
+      fetch(`/api/device/config?id=${encodeURIComponent(globalData[idx].id)}&unit=${encodeURIComponent(unit)}&min=${min}&max=${max}`)
         .then(r => r.text()).then(res => { showToast(res); fetchState(); });
     }
 
@@ -633,10 +665,12 @@ void handleStateAPI() {
       JsonObject obj = devs.createNestedObject();
       obj["id"] = devices[i].id;
       obj["name"] = devices[i].name;
+      obj["unit"] = devices[i].unit;
       obj["minSetpoint"] = devices[i].minSetpoint;
       obj["maxSetpoint"] = devices[i].maxSetpoint;
       obj["rawValue"] = devices[i].rawValue;
       obj["percent"] = devices[i].percent;
+      obj["output_mA"] = devices[i].output_mA;
       obj["commActive"] = devices[i].commActive;
     }
   }
@@ -676,8 +710,8 @@ void handleAddDevice() {
   for (int i = 0; i < MAX_DEVICES; i++) {
     if (!devices[i].active) {
       devices[i].active = true; devices[i].id = id; devices[i].name = name;
-      devices[i].minSetpoint = 1.0; devices[i].maxSetpoint = 9.0;
-      devices[i].rawValue = 0.0; devices[i].percent = 0.0; devices[i].commActive = false;
+      devices[i].unit = "m"; devices[i].minSetpoint = 0.0; devices[i].maxSetpoint = 10.0;
+      devices[i].rawValue = 0.0; devices[i].percent = 0.0; devices[i].output_mA = 4.0; devices[i].commActive = false;
       server.send(200, "text/plain", "Device Registered Successfully"); return;
     }
   }
@@ -693,9 +727,10 @@ void handleDeleteDevice() {
 void handleConfigDevice() {
   int idx = findDevice(server.arg("id"));
   if (idx != -1) {
+    devices[idx].unit = server.arg("unit");
     devices[idx].minSetpoint = server.arg("min").toFloat(); 
     devices[idx].maxSetpoint = server.arg("max").toFloat();
-    server.send(200, "text/plain", "Alarm Setpoints Saved Successfully");
+    server.send(200, "text/plain", "Calibration Saved Successfully");
   }
 }
 
@@ -717,7 +752,7 @@ void updateOLED() {
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
   display.setCursor(0, 0);
-  display.println("RADIOGEET DIGITAL");
+  display.println("RADIOGEET - RX PANEL");
   display.printf("PAN: 0x%04X\n", device_pan_id);
   display.drawLine(0, 18, 128, 18, SSD1306_WHITE);
 
@@ -734,9 +769,13 @@ void updateOLED() {
   if (activeIdx != -1) {
     display.printf("DEV : %s\n", devices[activeIdx].id.c_str());
     if (devices[activeIdx].commActive) {
-      display.printf("RAW : %.2f\n", devices[activeIdx].rawValue);
-      bool isAlarm = (devices[activeIdx].rawValue <= devices[activeIdx].minSetpoint || devices[activeIdx].rawValue >= devices[activeIdx].maxSetpoint);
-      display.printf("STAT: %s\n", isAlarm ? "ALARM TRIPPED" : "NORMAL");
+      if (devices[activeIdx].unit == "Raw") {
+        display.printf("RAW : %.0f (Raw)\n", devices[activeIdx].rawValue);
+      } else {
+        display.printf("RAW : %.2f %s\n", devices[activeIdx].rawValue, devices[activeIdx].unit.c_str());
+      }
+      display.printf("LVL : %.1f %%\n", devices[activeIdx].percent);
+      display.printf("mA  : %.2f mA\n", devices[activeIdx].output_mA);
     } else {
       display.println("STAT: COMM FAIL!");
       display.println("VAL : NO DATA");
@@ -757,11 +796,11 @@ void updateOLED() {
 void setup() {
   Serial.begin(115200); 
   
-  // Preferences (Default AP Password: "12345678")
+  // Preferences
   prefs.begin("rg-config", false);
   ap_ssid = prefs.getString("ssid", "RadioGeet_WTM");
   ap_password = prefs.getString("pass", "12345678"); 
-  device_pan_id = prefs.getInt("pan", 34969); // Default 0x8899
+  device_pan_id = prefs.getInt("pan", 34969);
   net_ip_str = prefs.getString("ip", "192.168.4.1");
   net_gateway_str = prefs.getString("gw", "192.168.4.1");
   net_subnet_str = prefs.getString("sub", "255.255.255.0");
@@ -770,10 +809,10 @@ void setup() {
   gateway.fromString(net_gateway_str);
   subnet.fromString(net_subnet_str);
 
-  // Initialize Default Devices
+  // Default Devices
   for (int i = 0; i < MAX_DEVICES; i++) devices[i].active = false;
-  devices[0] = {true, "TANK-01", "Tower Tank Main", 1.0, 9.0, 0.0, 0.0, false, 0};
-  devices[1] = {true, "tnk2", "Secondary Tank", 1.0, 9.0, 0.0, 0.0, false, 0};
+  devices[0] = {true, "TANK-01", "Tower Tank Main", "m", 0.0, 10.0, 0.0, 0.0, 4.0, false, 0};
+  devices[1] = {true, "tnk2", "Secondary Tank", "m", 0.0, 10.0, 0.0, 0.0, 4.0, false, 0};
   
   // Relay Pins
   for(int i=0; i<4; i++) { pinMode(RELAY_PINS[i], OUTPUT); digitalWrite(RELAY_PINS[i], LOW); }
@@ -827,25 +866,42 @@ void loop() {
     ESP.restart();
   }
 
-  // Parse Incoming LoRa Packets ("ID:<DEVICE_ID>,RAW:<VALUE>\n")
+  // Parse Incoming LoRa Packets:
+  // Supports "ID:<NODE>,RAW:<VAL>,UNIT:<U>,PCT:<P>,MA:<M>\n"
   if (Serial1.available()) {
     String incoming = Serial1.readStringUntil('\n'); 
     incoming.trim();
     if (incoming.length() > 0) {
-      int targetIdx = -1; 
+      int targetIdx = -1;
       float parsedRaw = -1.0;
+      String parsedUnit = "";
 
       if (incoming.indexOf("ID:") != -1 && incoming.indexOf("RAW:") != -1) {
-        String incId = incoming.substring(incoming.indexOf("ID:") + 3, incoming.indexOf(","));
-        parsedRaw = incoming.substring(incoming.indexOf("RAW:") + 4).toFloat();
+        int idStart = incoming.indexOf("ID:") + 3;
+        int idEnd = incoming.indexOf(",", idStart);
+        String incId = incoming.substring(idStart, idEnd);
+
+        int rawStart = incoming.indexOf("RAW:") + 4;
+        int rawEnd = incoming.indexOf(",", rawStart);
+        if (rawEnd == -1) rawEnd = incoming.length();
+        parsedRaw = incoming.substring(rawStart, rawEnd).toFloat();
+
+        if (incoming.indexOf("UNIT:") != -1) {
+          int uStart = incoming.indexOf("UNIT:") + 5;
+          int uEnd = incoming.indexOf(",", uStart);
+          if (uEnd == -1) uEnd = incoming.length();
+          parsedUnit = incoming.substring(uStart, uEnd);
+        }
+
         targetIdx = findDevice(incId);
-      } else if (incoming.startsWith("RAW:")) {
-        parsedRaw = incoming.substring(4).toFloat();
-        targetIdx = 0; // Default to first registered device
       }
 
       if (targetIdx != -1 && parsedRaw >= 0) {
         devices[targetIdx].rawValue = parsedRaw;
+        // Sync incoming unit from Transmitter if present
+        if (parsedUnit.length() > 0) {
+          devices[targetIdx].unit = parsedUnit;
+        }
         devices[targetIdx].lastPacketTime = millis();
         devices[targetIdx].commActive = true;
       }
@@ -860,7 +916,6 @@ void loop() {
     bool anyAlarmTriggered = false;
     for (int i = 0; i < MAX_DEVICES; i++) {
       if (devices[i].active) {
-        // Data Freshness & Communication Timeout Check
         if (devices[i].commActive && (millis() - devices[i].lastPacketTime > COMM_TIMEOUT_MS)) {
           devices[i].commActive = false;
         }
@@ -877,7 +932,10 @@ void loop() {
           if (devices[i].percent < 0) devices[i].percent = 0; 
           if (devices[i].percent > 100) devices[i].percent = 100;
 
-          // Trip alarm if Raw Value is outside the configured Min/Max bounds
+          // 4-20 mA calculation based on calibrated percentage
+          devices[i].output_mA = 4.0 + (16.0 * (devices[i].percent / 100.0));
+
+          // Trip alarm if Raw Value is outside the configured bounds
           if (devices[i].rawValue <= minS || devices[i].rawValue >= maxS) {
             anyAlarmTriggered = true;
           }
