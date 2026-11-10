@@ -1,6 +1,7 @@
 /*
   RadioGeet Digital Pvt. Ltd.
-  Industrial Multi-Device SCADA Panel (With "ALL Tanks" Grid View)
+  TATA STEEL – SPONGE IRON, JODA
+  Control Room Station: SCADA Receiver Panel (LoRa Receiver)
   Hardware: ESP32-S3 Dev Module + 128x64 I2C OLED (SDA: 39, SCL: 38)
   Default WiFi Password: 12345678
 */
@@ -26,7 +27,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 #define LORA_RX_PIN 16
 #define LORA_TX_PIN 17
 
-const int RELAY_PINS[4] = {4, 5, 6, 7}; // Relay 1 (Alarm/Hooter), Relay 2, Relay 3, Relay 4
+const int RELAY_PINS[4] = {4, 5, 6, 7}; // Relay 1 (Hooter/Alarm), Relay 2, Relay 3, Relay 4
 bool relayState[4] = {false, false, false, false};
 
 // =======================================================================
@@ -87,7 +88,6 @@ const char* html_page PROGMEM = R"rawliteral(
     }
     body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; }
     
-    /* Sidebar */
     .sidebar { width: 280px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: width 0.3s ease; overflow: hidden; white-space: nowrap; position: relative; z-index: 10; box-shadow: 2px 0 10px rgba(0,0,0,0.03); }
     .sidebar.collapsed { width: 75px; }
     
@@ -109,7 +109,6 @@ const char* html_page PROGMEM = R"rawliteral(
     .nav-icon { min-width: 35px; font-size: 18px; font-weight: bold; text-align: center; }
     .sidebar.collapsed .nav-text { display: none; }
 
-    /* Layout & Footer */
     .main-wrapper { flex: 1; display: flex; flex-direction: column; overflow-y: auto; position: relative; }
     .main-content { padding: 35px 35px 10px 35px; flex: 1 0 auto; }
     .footer { text-align: center; padding: 18px; color: #94a3b8; font-size: 13px; font-weight: 500; border-top: 1px solid var(--border); margin-top: auto; flex-shrink: 0; }
@@ -123,7 +122,7 @@ const char* html_page PROGMEM = R"rawliteral(
     .card { background: var(--card); padding: 25px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
     .card-title { margin-top: 0; color: var(--text-muted); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 20px;}
     
-    /* 3D Tank */
+    /* 3D Animated Tank */
     .tank-wrapper { display: flex; justify-content: center; margin: 20px 0; }
     .tank-3d { width: 130px; height: 250px; border: 4px solid #cbd5e1; border-radius: 12px 12px 28px 28px; position: relative; overflow: hidden; background: #f8fafc; box-shadow: inset 0 0 20px rgba(0,0,0,0.08); }
     .tank-liquid { position: absolute; bottom: 0; width: 100%; height: 0%; background: linear-gradient(to bottom, #3b82f6, var(--primary)); transition: height 1s ease-in-out, background 0.5s; }
@@ -135,7 +134,6 @@ const char* html_page PROGMEM = R"rawliteral(
     .badge.success { background: #dcfce7; color: var(--success); }
     .badge.danger { background: #fee2e2; color: var(--danger); }
     
-    /* Form & Input Styles */
     .form-group { margin-bottom: 18px; }
     label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px; color: var(--text); }
     input[type="text"], input[type="number"], select { width: 100%; padding: 11px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; font-family: inherit; font-size: 14px; outline: none; transition: 0.2s; }
@@ -145,7 +143,6 @@ const char* html_page PROGMEM = R"rawliteral(
     button.btn-danger { background: var(--danger); }
     button.btn-danger:hover { background: #dc2626; }
     
-    /* Relays */
     .relay-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; }
     .relay-card { background: var(--bg); border: 1px solid var(--border); padding: 20px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; text-align: center; }
     .relay-indicator { width: 15px; height: 15px; border-radius: 50%; background: #94a3b8; margin-bottom: 12px; }
@@ -207,7 +204,6 @@ const char* html_page PROGMEM = R"rawliteral(
           <select id="view-device-select" onchange="changeDashboardSelection()"></select>
         </div>
 
-        <!-- Dynamic Container for Single or All Tanks -->
         <div id="dashboard-display-container"></div>
       </div>
 
@@ -252,7 +248,6 @@ const char* html_page PROGMEM = R"rawliteral(
         <h1 class="header-title">Device Alarm Setpoints & Registration</h1>
         <div class="grid">
           
-          <!-- Alarm Setpoints Card -->
           <div class="card">
             <h3 class="card-title">Configure Device Alarm Setpoints</h3>
             <div class="form-group"><label>Select Target Device</label><select id="config-device-select" onchange="loadDeviceConfig()"></select></div>
@@ -261,7 +256,6 @@ const char* html_page PROGMEM = R"rawliteral(
             <button onclick="requireAuth(saveDeviceConfig)">Save Setpoints</button>
           </div>
 
-          <!-- Add Device Card -->
           <div class="card">
             <h3 class="card-title">Register New Field Device</h3>
             <div class="form-group"><label>Device Node ID</label><input type="text" id="add-id" placeholder="TANK-01"></div>
@@ -319,7 +313,6 @@ const char* html_page PROGMEM = R"rawliteral(
 
     </div>
 
-    <!-- Clean Official Copyright Footer -->
     <div class="footer">
       &copy; 2026 RadioGeet Digital Pvt. Ltd. All Rights Reserved.
     </div>
@@ -329,7 +322,7 @@ const char* html_page PROGMEM = R"rawliteral(
 
   <script>
     let globalData = [];
-    let currentSelection = 'all'; // Default to ALL Tanks
+    let currentSelection = 'all';
 
     function toggleSidebar() {
       document.getElementById('sidebar').classList.toggle('collapsed');
@@ -441,7 +434,6 @@ const char* html_page PROGMEM = R"rawliteral(
       buildDashboardDOM();
     }
 
-    // Build the Dashboard HTML DOM based on "ALL" or Single Tank
     function buildDashboardDOM() {
       const container = document.getElementById('dashboard-display-container');
       
@@ -451,7 +443,6 @@ const char* html_page PROGMEM = R"rawliteral(
       }
 
       if (currentSelection === 'all') {
-        // Render a Grid Card for every single active tank
         let html = '<div class="grid">';
         globalData.forEach((d, idx) => {
           html += `
@@ -483,7 +474,6 @@ const char* html_page PROGMEM = R"rawliteral(
         html += '</div>';
         container.innerHTML = html;
       } else {
-        // Render single dedicated card
         const idx = parseInt(currentSelection);
         const d = globalData[idx];
         if(!d) return;
@@ -515,7 +505,6 @@ const char* html_page PROGMEM = R"rawliteral(
       }
     }
 
-    // Update real-time numbers & visual tank animation
     function updateDashboardData() {
       if (!globalData || globalData.length === 0) return;
 
@@ -683,7 +672,7 @@ void handleSystemUpdate() {
 
 void handleAddDevice() {
   String id = server.arg("id"); String name = server.arg("name");
-  if (findDevice(id) != -1) { server.send(200, "text/plain", "Device ID already exists!"); return; }
+  if (findDevice(id) != -1) { server.send(200, "text/plain", "Device ID exists!"); return; }
   for (int i = 0; i < MAX_DEVICES; i++) {
     if (!devices[i].active) {
       devices[i].active = true; devices[i].id = id; devices[i].name = name;
@@ -768,10 +757,10 @@ void updateOLED() {
 void setup() {
   Serial.begin(115200); 
   
-  // 1. Load System Preferences (Default AP Password: "12345678")
+  // Preferences (Default AP Password: "12345678")
   prefs.begin("rg-config", false);
   ap_ssid = prefs.getString("ssid", "RadioGeet_WTM");
-  ap_password = prefs.getString("pass", "12345678"); // Explicitly set to 12345678
+  ap_password = prefs.getString("pass", "12345678"); 
   device_pan_id = prefs.getInt("pan", 34969); // Default 0x8899
   net_ip_str = prefs.getString("ip", "192.168.4.1");
   net_gateway_str = prefs.getString("gw", "192.168.4.1");
@@ -781,15 +770,15 @@ void setup() {
   gateway.fromString(net_gateway_str);
   subnet.fromString(net_subnet_str);
 
-  // 2. Initial Device Data
+  // Initialize Default Devices
   for (int i = 0; i < MAX_DEVICES; i++) devices[i].active = false;
   devices[0] = {true, "TANK-01", "Tower Tank Main", 1.0, 9.0, 0.0, 0.0, false, 0};
   devices[1] = {true, "tnk2", "Secondary Tank", 1.0, 9.0, 0.0, 0.0, false, 0};
   
-  // 3. Relay Pins
+  // Relay Pins
   for(int i=0; i<4; i++) { pinMode(RELAY_PINS[i], OUTPUT); digitalWrite(RELAY_PINS[i], LOW); }
 
-  // 4. OLED Display (Hardware Pins 39 & 38)
+  // OLED Display Init (Pins 39 & 38)
   Wire.begin(I2C_SDA, I2C_SCL);
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.clearDisplay();
@@ -801,15 +790,15 @@ void setup() {
   display.println("SCADA INITIALIZING...");
   display.display();
 
-  // 5. LoRa UART
+  // LoRa UART Receiver (Pins 16 & 17)
   Serial1.begin(9600, SERIAL_8N1, LORA_RX_PIN, LORA_TX_PIN);
 
-  // 6. WiFi Network
+  // WiFi Setup
   WiFi.softAPConfig(local_ip, gateway, subnet);
   WiFi.softAP(ap_ssid.c_str(), ap_password.c_str());
   macAddress = WiFi.softAPmacAddress();
 
-  // 7. Web Routes
+  // Web Routes
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/state", HTTP_GET, handleStateAPI);
   server.on("/api/system/update", HTTP_GET, handleSystemUpdate);
@@ -838,19 +827,21 @@ void loop() {
     ESP.restart();
   }
 
-  // Read Incoming LoRa Raw Data
+  // Parse Incoming LoRa Packets ("ID:<DEVICE_ID>,RAW:<VALUE>\n")
   if (Serial1.available()) {
-    String incoming = Serial1.readStringUntil('\n'); incoming.trim();
+    String incoming = Serial1.readStringUntil('\n'); 
+    incoming.trim();
     if (incoming.length() > 0) {
-      int targetIdx = 0; float parsedRaw = -1.0;
+      int targetIdx = -1; 
+      float parsedRaw = -1.0;
+
       if (incoming.indexOf("ID:") != -1 && incoming.indexOf("RAW:") != -1) {
         String incId = incoming.substring(incoming.indexOf("ID:") + 3, incoming.indexOf(","));
         parsedRaw = incoming.substring(incoming.indexOf("RAW:") + 4).toFloat();
         targetIdx = findDevice(incId);
       } else if (incoming.startsWith("RAW:")) {
         parsedRaw = incoming.substring(4).toFloat();
-      } else if (incoming.startsWith("LEVEL:")) { 
-        parsedRaw = incoming.substring(6).toFloat();
+        targetIdx = 0; // Default to first registered device
       }
 
       if (targetIdx != -1 && parsedRaw >= 0) {
@@ -861,7 +852,7 @@ void loop() {
     }
   }
 
-  // Alarm Evaluation & Relay Operation Logic (1Hz)
+  // 1-Second Control & Alarm Logic Loop
   static unsigned long lastLogicUpdate = 0;
   if (millis() - lastLogicUpdate > 1000) {
     lastLogicUpdate = millis();
@@ -869,6 +860,7 @@ void loop() {
     bool anyAlarmTriggered = false;
     for (int i = 0; i < MAX_DEVICES; i++) {
       if (devices[i].active) {
+        // Data Freshness & Communication Timeout Check
         if (devices[i].commActive && (millis() - devices[i].lastPacketTime > COMM_TIMEOUT_MS)) {
           devices[i].commActive = false;
         }
@@ -885,6 +877,7 @@ void loop() {
           if (devices[i].percent < 0) devices[i].percent = 0; 
           if (devices[i].percent > 100) devices[i].percent = 100;
 
+          // Trip alarm if Raw Value is outside the configured Min/Max bounds
           if (devices[i].rawValue <= minS || devices[i].rawValue >= maxS) {
             anyAlarmTriggered = true;
           }
@@ -906,5 +899,5 @@ void loop() {
     last_oled = millis();
   }
 
-  delay(1); // CPU Yield
+  delay(1);
 }
